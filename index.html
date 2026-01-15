@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LifeGrid Lite（自动列数 · 月视图）</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --text:#e9efff;
+      --muted:#a6b6ffcc;
+      --border:#22315f;
+
+      --future:#2ecc71;
+      --past:#6d768c;
+
+      --cell:12px;
+      --gap:2px;
+      --cols:48;
+      --bug:26px;
+
+      --card: rgba(255,255,255,.07);
+      --card2: rgba(255,255,255,.04);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC","Hiragino Sans GB","Microsoft YaHei", Arial, sans-serif;
+      background:
+        radial-gradient(1200px 700px at 10% -10%, #1f2e6a 0%, transparent 62%),
+        radial-gradient(1000px 550px at 92% 0%, #1b6b52 0%, transparent 58%),
+        var(--bg);
+      color:var(--text);
+      overflow:hidden;
+    }
+    header{
+      max-width:1200px;
+      margin:0 auto;
+      padding:14px 16px 10px;
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    h1{margin:0; font-size:16px; letter-spacing:.2px}
+    .sub{color:var(--muted); font-size:12px}
+
+    .wrap{
+      max-width:1200px;
+      margin:0 auto;
+      padding:0 16px 16px;
+      height: calc(100vh - 56px);
+      display:grid;
+      grid-template-rows: auto 1fr auto;
+      gap:10px;
+    }
+
+    .card{
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:12px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      overflow:hidden;
+    }
+
+    .controls{
+      display:flex;
+      gap:10px;
+      align-items:flex-end;
+      flex-wrap:wrap;
+    }
+    label{display:block; font-size:12px; color:var(--muted); margin:0 0 6px;}
+    input{
+      padding:9px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.16);
+      color:var(--text);
+      outline:none;
+      min-width:180px;
+    }
+    input:focus{ border-color: rgba(46,204,113,.7); box-shadow: 0 0 0 3px rgba(46,204,113,.12); }
+    button{
+      cursor:pointer;
+      border:none;
+      padding:9px 12px;
+      border-radius:12px;
+      color:#071f12;
+      background: linear-gradient(180deg, rgba(46,204,113,.95), rgba(30,160,86,.95));
+      font-weight:800;
+      font-size:12px;
+      border:1px solid rgba(255,255,255,.10);
+      white-space:nowrap;
+    }
+    .stat{
+      margin-left:auto;
+      color:var(--muted);
+      font-size:12px;
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .pill{
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.12);
+    }
+
+    /* Main grid */
+    .gridWrap{
+      position:relative;
+      height:100%;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.12);
+      padding:10px;
+      overflow:auto; /* scroll when lots of months */
+    }
+    .grid{
+      position:relative;
+      display:grid;
+      grid-template-columns: repeat(var(--cols), var(--cell));
+      grid-auto-rows: var(--cell);
+      gap: var(--gap);
+      width: max-content; /* allow horizontal if needed */
+      height: max-content;
+    }
+    .cell{
+      width:var(--cell);
+      height:var(--cell);
+      border-radius:4px;
+      border:1px solid rgba(255,255,255,.05);
+      background: rgba(255,255,255,.08);
+    }
+    .cell.past{ background: var(--past); }
+    .cell.future{ background: var(--future); }
+
+    .bug{
+      position:absolute;
+      left:0; top:0;
+      width:var(--bug);
+      height:var(--bug);
+      pointer-events:none;
+      transform: translate3d(var(--x), var(--y), 0);
+      transform-origin: 50% 55%;
+      transition: transform 120ms linear;
+      filter: drop-shadow(0 8px 10px rgba(0,0,0,.35));
+      z-index:5;
+    }
+    .bug .breathe{
+      width:100%; height:100%;
+      animation: breathe 2.4s infinite ease-in-out;
+    }
+    @keyframes breathe{
+      0%{transform: scale(1)}
+      50%{transform: scale(1.06)}
+      100%{transform: scale(1)}
+    }
+    .svg{width:100%; height:100%; display:block;}
+    .wiggle{ animation: wiggle 700ms infinite ease-in-out; transform-origin: 50% 70%; }
+    @keyframes wiggle{
+      0%{ transform: rotate(-6deg) }
+      50%{ transform: rotate(6deg) }
+      100%{ transform: rotate(-6deg) }
+    }
+
+    /* Time bars */
+    .clockWrap{ display:grid; gap:10px; }
+    .clockHead{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:baseline;
+    }
+    .clockTitle{color:#d9e2ff; font-size:13px}
+    .nowTxt{color:var(--muted); font-size:12px}
+    .barWrap{ position:relative; }
+    .bar{
+      position:relative;
+      display:grid;
+      gap:2px;
+      width:100%;
+      height:16px;
+      border-radius:10px;
+      overflow:hidden;
+    }
+    .barCell{
+      border-radius:4px;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.05);
+    }
+    .barCell.past{ background: rgba(109,118,140,.85); }
+    .barCell.future{ background: rgba(46,204,113,.85); }
+
+    .barBug{
+      position:absolute;
+      top:-20px;
+      width:22px;
+      height:22px;
+      transform: translate3d(var(--x), 0, 0);
+      transition: transform 150ms linear;
+      pointer-events:none;
+      filter: drop-shadow(0 6px 8px rgba(0,0,0,.25));
+      z-index:5;
+    }
+    .barBug .breathe{width:100%;height:100%; animation:breathe 2.2s infinite ease-in-out;}
+    .hint{color:var(--muted); font-size:12px; margin-top:4px}
+  </style>
+</head>
+<body>
+<header>
+  <h1>LifeGrid Lite（自动列数 · 月视图）</h1>
+  <div class="sub">每格=1个月 · 🐞代表此刻 · 主窗口可滚动</div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="controls">
+      <div>
+        <label>生日</label>
+        <input id="dob" type="date" />
+      </div>
+      <div>
+        <label>预期寿命（年）</label>
+        <input id="lifeYears" type="number" min="1" max="150" step="1" value="90" />
+      </div>
+      <button id="renderBtn">生成 / 刷新</button>
+
+      <div class="stat">
+        <span class="pill" id="pMonths">—</span>
+        <span class="pill" id="pLeft">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:12px;">
+    <div class="gridWrap" id="gridWrap">
+      <div class="grid" id="grid"></div>
+      <div class="bug" id="bug" style="--x:0px; --y:0px;">
+        <div class="breathe">
+          <div class="wiggle">
+            <svg class="svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="76" cy="50" r="12" fill="#101018"/>
+              <ellipse cx="46" cy="50" rx="28" ry="24" fill="#d11"/>
+              <path d="M46 26 C46 26,46 74,46 74" stroke="#111" stroke-width="4" />
+              <circle cx="36" cy="42" r="4" fill="#111"/>
+              <circle cx="30" cy="58" r="4" fill="#111"/>
+              <circle cx="56" cy="42" r="4" fill="#111"/>
+              <circle cx="62" cy="58" r="4" fill="#111"/>
+              <path d="M82 42 C90 34,94 30,96 26" stroke="#111" stroke-width="3" fill="none"/>
+              <path d="M82 58 C90 66,94 70,96 74" stroke="#111" stroke-width="3" fill="none"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="hint">提示：窗口变大/变小时，列数会自动调整以尽量填满宽度。</div>
+  </div>
+
+  <div class="card">
+    <div class="clockWrap">
+      <div class="clockHead">
+        <div class="clockTitle">今天的时间条</div>
+        <div class="nowTxt" id="nowTxt">—</div>
+      </div>
+
+      <div>
+        <div class="hint" style="margin:0 0 6px;">24小时</div>
+        <div class="barWrap">
+          <div class="bar" id="barDay"></div>
+          <div class="barBug" id="bugDay" style="--x:0px;">
+            <div class="breathe">
+              <svg class="svg" viewBox="0 0 100 100">
+                <circle cx="76" cy="50" r="12" fill="#101018"/>
+                <ellipse cx="46" cy="50" rx="28" ry="24" fill="#d11"/>
+                <path d="M46 26 C46 26,46 74,46 74" stroke="#111" stroke-width="4" />
+                <circle cx="36" cy="42" r="4" fill="#111"/>
+                <circle cx="30" cy="58" r="4" fill="#111"/>
+                <circle cx="56" cy="42" r="4" fill="#111"/>
+                <circle cx="62" cy="58" r="4" fill="#111"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="hint" style="margin:0 0 6px;">60分钟</div>
+        <div class="barWrap">
+          <div class="bar" id="barHour"></div>
+          <div class="barBug" id="bugHour" style="--x:0px;">
+            <div class="breathe">
+              <svg class="svg" viewBox="0 0 100 100">
+                <circle cx="76" cy="50" r="12" fill="#101018"/>
+                <ellipse cx="46" cy="50" rx="28" ry="24" fill="#d11"/>
+                <path d="M46 26 C46 26,46 74,46 74" stroke="#111" stroke-width="4" />
+                <circle cx="36" cy="42" r="4" fill="#111"/>
+                <circle cx="30" cy="58" r="4" fill="#111"/>
+                <circle cx="56" cy="42" r="4" fill="#111"/>
+                <circle cx="62" cy="58" r="4" fill="#111"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="hint" style="margin:0 0 6px;">60秒</div>
+        <div class="barWrap">
+          <div class="bar" id="barMin"></div>
+          <div class="barBug" id="bugMin" style="--x:0px;">
+            <div class="breathe">
+              <svg class="svg" viewBox="0 0 100 100">
+                <circle cx="76" cy="50" r="12" fill="#101018"/>
+                <ellipse cx="46" cy="50" rx="28" ry="24" fill="#d11"/>
+                <path d="M46 26 C46 26,46 74,46 74" stroke="#111" stroke-width="4" />
+                <circle cx="36" cy="42" r="4" fill="#111"/>
+                <circle cx="30" cy="58" r="4" fill="#111"/>
+                <circle cx="56" cy="42" r="4" fill="#111"/>
+                <circle cx="62" cy="58" r="4" fill="#111"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const $ = (id)=>document.getElementById(id);
+  const DAY_MS = 24*60*60*1000;
+
+  const gridWrap = $("gridWrap");
+  const gridEl = $("grid");
+  const bugEl = $("bug");
+
+  let cells = [];
+  let totalMonths = 0;
+  let livedMonths = 0;
+  let cols = 48;
+
+  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+  function fmt2(n){ return String(n).padStart(2,"0"); }
+  function parseDate(s){ const d=new Date(s); d.setHours(0,0,0,0); return d; }
+  function startOfToday(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+
+  function monthDiff(d1,d2){
+    let months = (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth());
+    if (d2.getDate() < d1.getDate()) months -= 1;
+    return Math.max(0, months);
+  }
+
+  function autoCols(){
+    // Choose a target cell size and compute columns to fit the container width
+    const gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--gap"), 10) || 2;
+    const pad = 10;
+    const w = gridWrap.clientWidth - pad*2 - 8;
+    const target = 12; // px target size
+    let c = Math.floor((w + gap) / (target + gap));
+    c = clamp(c, 12, 120);
+    cols = c;
+    document.documentElement.style.setProperty("--cols", cols);
+  }
+
+  function computeCellAndBug(rows){
+    const gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--gap"), 10) || 2;
+    const pad = 10;
+    const wrapW = gridWrap.clientWidth - pad*2 - 8;
+    const wrapH = gridWrap.clientHeight - pad*2 - 8;
+
+    // Fit by width/height, but prioritize filling width nicely.
+    const cellByW = (wrapW - gap*(cols-1)) / cols;
+    const cellByH = (wrapH - gap*(rows-1)) / rows;
+    const cell = clamp(Math.floor(Math.min(cellByW, cellByH)), 7, 18);
+
+    document.documentElement.style.setProperty("--cell", `${cell}px`);
+    const bug = clamp(Math.floor(cell * 1.6), 20, 34);
+    document.documentElement.style.setProperty("--bug", `${bug}px`);
+  }
+
+  function buildGrid(dob, lifeYears){
+    gridEl.innerHTML = "";
+    cells = [];
+
+    autoCols();
+    totalMonths = clamp(lifeYears,1,150) * 12;
+    const rows = Math.ceil(totalMonths / cols);
+    computeCellAndBug(rows);
+
+    const frag = document.createDocumentFragment();
+    for(let i=0;i<totalMonths;i++){
+      const c = document.createElement("div");
+      c.className = "cell";
+      frag.appendChild(c);
+      cells.push(c);
+    }
+    gridEl.appendChild(frag);
+  }
+
+  function paint(){
+    for (let i=0;i<cells.length;i++){
+      const c = cells[i];
+      c.classList.toggle("past", i < livedMonths);
+      c.classList.toggle("future", i >= livedMonths);
+    }
+    $("pMonths").textContent = `已走过：${livedMonths} 个月`;
+    $("pLeft").textContent = `剩余：${Math.max(0,totalMonths - livedMonths)} 个月`;
+  }
+
+  function placeBug(){
+    if (!cells.length) return;
+    const idx = clamp(livedMonths, 0, cells.length-1);
+    const cell = cells[idx];
+
+    const wrapRect = gridWrap.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+
+    const cellSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--cell"),10);
+    const bugSize  = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--bug"),10);
+
+    let x = (cellRect.left - wrapRect.left) + (cellSize/2 - bugSize/2) + gridWrap.scrollLeft;
+    let y = (cellRect.top  - wrapRect.top ) + (cellSize/2 - bugSize/2) + gridWrap.scrollTop;
+
+    const t = performance.now()/520;
+    const amp = Math.max(1, Math.floor(cellSize*0.10));
+    x += Math.sin(t) * amp;
+    y += Math.cos(t*1.25) * amp;
+
+    bugEl.style.setProperty("--x", `${x}px`);
+    bugEl.style.setProperty("--y", `${y}px`);
+  }
+
+  function refresh(){
+    const dobVal = $("dob").value;
+    if (!dobVal) return;
+    const dob = parseDate(dobVal);
+    const today = startOfToday();
+    const lifeYears = clamp(parseInt($("lifeYears").value,10) || 90, 1, 150);
+
+    buildGrid(dob, lifeYears);
+    livedMonths = clamp(monthDiff(dob, today), 0, totalMonths);
+    paint();
+    placeBug();
+  }
+
+  // Time bars
+  function buildBar(el, n){
+    el.innerHTML = "";
+    el.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+    const frag = document.createDocumentFragment();
+    for(let i=0;i<n;i++){
+      const c = document.createElement("div");
+      c.className = "barCell";
+      frag.appendChild(c);
+    }
+    el.appendChild(frag);
+  }
+  buildBar($("barDay"), 24);
+  buildBar($("barHour"), 60);
+  buildBar($("barMin"), 60);
+
+  function placeBarBug(barEl, bugEl, idx, n){
+    const cells = Array.from(barEl.children);
+    for(let i=0;i<n;i++){
+      cells[i].classList.toggle("past", i < idx);
+      cells[i].classList.toggle("future", i >= idx);
+    }
+    const cell = cells[clamp(idx,0,n-1)];
+    if (!cell) return;
+    const barRect = barEl.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const x = (cellRect.left - barRect.left) + (cellRect.width/2 - 11);
+    bugEl.style.setProperty("--x", `${x}px`);
+  }
+
+  function tick(){
+    const now = new Date();
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+    const ss = now.getSeconds();
+
+    $("nowTxt").textContent = `当前时间：${now.getFullYear()}-${fmt2(now.getMonth()+1)}-${fmt2(now.getDate())}  ${fmt2(hh)}:${fmt2(mm)}:${fmt2(ss)}`;
+
+    placeBarBug($("barDay"), $("bugDay"), hh, 24);
+    placeBarBug($("barHour"), $("bugHour"), mm, 60);
+    placeBarBug($("barMin"), $("bugMin"), ss, 60);
+
+    placeBug();
+  }
+
+  $("renderBtn").addEventListener("click", refresh);
+  gridWrap.addEventListener("scroll", placeBug);
+  window.addEventListener("resize", refresh);
+
+  setInterval(tick, 1000);
+  setTimeout(tick, 60);
+
+  (function init(){
+    const d = new Date(); d.setFullYear(d.getFullYear()-32);
+    $("dob").value = `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
+    refresh();
+  })();
+</script>
+</body>
+</html>
